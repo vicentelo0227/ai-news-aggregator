@@ -92,7 +92,7 @@ llm:
   model: gpt-5.2-2025-12-11
   
   # 摘要最大 token 數
-  max_tokens: 5000
+  max_completion_tokens: 5000
   
   # 溫度（越低越穩定）
   temperature: 0.3
