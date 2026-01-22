@@ -117,15 +117,15 @@ def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches:
     
     # 結尾
     blocks.append({"type": "divider"})
-    blocks.append({
-        "type": "context",
-        "elements": [
-            {
-                "type": "mrkdwn",
-                "text": "🤖 由 AI 新聞聚合器自動產生 | <https://github.com/vicentelo0227/ai-news-aggregator|GitHub>"
-            }
-        ]
-    })
+    # blocks.append({
+    #     "type": "context",
+    #     "elements": [
+    #         {
+    #             "type": "mrkdwn",
+    #             "text": "🤖 由 AI 新聞聚合器自動產生 | <https://github.com/vicentelo0227/ai-news-aggregator|GitHub>"
+    #         }
+    #     ]
+    # })
     
     return blocks
 
