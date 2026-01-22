@@ -12,12 +12,15 @@ from loguru import logger
 from .config import get_config
 
 
-def format_slack_blocks(articles: list[dict]) -> list[dict[str, Any]]:
+def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches: int = 1, total_articles: int = 0) -> list[dict[str, Any]]:
     """
     將文章列表格式化為 Slack Block Kit 格式
     
     Args:
         articles: 處理完成的文章列表
+        batch_num: 當前批次編號（從 0 開始）
+        total_batches: 總批次數
+        total_articles: 總文章數
         
     Returns:
         Slack blocks 列表
@@ -25,13 +28,20 @@ def format_slack_blocks(articles: list[dict]) -> list[dict[str, Any]]:
     config = get_config()
     slack_config = config.slack
     
+    # 計算文章編號偏移
+    offset = batch_num * 15  # 每批最多 15 篇
+    
     # 標題區塊
+    title_text = slack_config.get("title", "📰 AI 新聞摘要")
+    if total_batches > 1:
+        title_text += f" ({batch_num + 1}/{total_batches})"
+    
     blocks = [
         {
             "type": "header",
             "text": {
                 "type": "plain_text",
-                "text": slack_config.get("title", "📰 AI 新聞摘要"),
+                "text": title_text,
                 "emoji": True
             }
         },
@@ -40,7 +50,7 @@ def format_slack_blocks(articles: list[dict]) -> list[dict[str, Any]]:
             "elements": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*{datetime.now().strftime('%Y年%m月%d日 %H:%M')}* • {len(articles)} 則精選報導"
+                    "text": f"*{datetime.now().strftime('%Y年%m月%d日 %H:%M')}* • {total_articles if total_articles else len(articles)} 則精選報導"
                 }
             ]
         },
@@ -58,7 +68,7 @@ def format_slack_blocks(articles: list[dict]) -> list[dict[str, Any]]:
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": f"*{i+1}. <{url}|{title}>*\n{summary}"
+                "text": f"*{offset + i + 1}. <{url}|{title}>*\n{summary}"
             }
         })
         
@@ -112,7 +122,7 @@ def format_slack_blocks(articles: list[dict]) -> list[dict[str, Any]]:
         "elements": [
             {
                 "type": "mrkdwn",
-                "text": "🤖 由 AI 新聞聚合器自動產生 | <https://github.com/your-username/ai-news-aggregator|GitHub>"
+                "text": "🤖 由 AI 新聞聚合器自動產生 | <https://github.com/vicentelo0227/ai-news-aggregator|GitHub>"
             }
         ]
     })
@@ -122,7 +132,7 @@ def format_slack_blocks(articles: list[dict]) -> list[dict[str, Any]]:
 
 def send_to_slack(articles: list[dict], max_retries: int = 3) -> bool:
     """
-    發送訊息到 Slack
+    發送訊息到 Slack（自動分批處理超過 15 篇的文章）
     
     Args:
         articles: 處理完成的文章列表
@@ -142,48 +152,72 @@ def send_to_slack(articles: list[dict], max_retries: int = 3) -> bool:
         logger.warning("沒有文章可發送")
         return False
     
-    # 建立訊息
-    blocks = format_slack_blocks(articles)
-    payload = {
-        "text": f"AI 新聞摘要 - {len(articles)} 則報導",  # 備用文字
-        "blocks": blocks
-    }
+    # 分批處理（每批最多 15 篇，避免超過 Slack 50 blocks 限制）
+    batch_size = 15
+    batches = [articles[i:i + batch_size] for i in range(0, len(articles), batch_size)]
+    total_batches = len(batches)
+    total_articles = len(articles)
     
-    # 發送（含重試邏輯）
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(
-                webhook_url,
-                json=payload,
-                timeout=10,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            if response.status_code == 200:
-                logger.info(f"✓ 成功發送 {len(articles)} 篇文章到 Slack")
-                return True
-            
-            elif response.status_code == 429:
-                # Rate limited
-                retry_after = int(response.headers.get("Retry-After", 5))
-                logger.warning(f"Slack 速率限制，等待 {retry_after} 秒後重試...")
-                time.sleep(retry_after)
-                continue
-            
-            else:
-                logger.error(f"Slack 回應錯誤：{response.status_code} - {response.text}")
-                return False
+    all_success = True
+    
+    for batch_num, batch in enumerate(batches):
+        # 建立訊息
+        blocks = format_slack_blocks(batch, batch_num, total_batches, total_articles)
+        payload = {
+            "text": f"AI 新聞摘要 - {total_articles} 則報導" + (f" ({batch_num + 1}/{total_batches})" if total_batches > 1 else ""),
+            "blocks": blocks
+        }
+        
+        # 發送（含重試邏輯）
+        success = False
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    webhook_url,
+                    json=payload,
+                    timeout=10,
+                    headers={"Content-Type": "application/json"}
+                )
                 
-        except requests.Timeout:
-            logger.warning(f"Slack 請求超時（嘗試 {attempt + 1}/{max_retries}）")
-            time.sleep(2 ** attempt)  # 指數退避
-            
-        except requests.RequestException as e:
-            logger.error(f"Slack 請求失敗：{e}")
-            time.sleep(2 ** attempt)
+                if response.status_code == 200:
+                    if total_batches > 1:
+                        logger.info(f"✓ 成功發送第 {batch_num + 1}/{total_batches} 批（{len(batch)} 篇）到 Slack")
+                    else:
+                        logger.info(f"✓ 成功發送 {len(batch)} 篇文章到 Slack")
+                    success = True
+                    break
+                
+                elif response.status_code == 429:
+                    # Rate limited
+                    retry_after = int(response.headers.get("Retry-After", 5))
+                    logger.warning(f"Slack 速率限制，等待 {retry_after} 秒後重試...")
+                    time.sleep(retry_after)
+                    continue
+                
+                else:
+                    logger.error(f"Slack 回應錯誤：{response.status_code} - {response.text}")
+                    break
+                    
+            except requests.Timeout:
+                logger.warning(f"Slack 請求超時（嘗試 {attempt + 1}/{max_retries}）")
+                time.sleep(2 ** attempt)  # 指數退避
+                
+            except requests.RequestException as e:
+                logger.error(f"Slack 請求失敗：{e}")
+                time.sleep(2 ** attempt)
+        
+        if not success:
+            all_success = False
+            logger.error(f"第 {batch_num + 1} 批發送失敗")
+        
+        # 批次之間稍作延遲，避免速率限制
+        if batch_num < total_batches - 1:
+            time.sleep(1)
     
-    logger.error("Slack 發送失敗，已達最大重試次數")
-    return False
+    if all_success:
+        logger.info(f"✓ 全部 {total_articles} 篇文章發送完成")
+    
+    return all_success
 
 
 def send_error_notification(error_message: str) -> bool:
