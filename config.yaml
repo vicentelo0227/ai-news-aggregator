@@ -1,0 +1,120 @@
+# AI 新聞聚合器設定檔
+
+# RSS 新聞來源
+feeds:
+  # === 第一級：高可靠性 AI 專注來源 ===
+  - name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/feed/
+    enabled: true
+    
+  - name: VentureBeat AI
+    url: https://venturebeat.com/category/ai/feed/
+    enabled: true
+    
+  - name: The Verge AI
+    url: https://www.theverge.com/rss/ai-artificial-intelligence/index.xml
+    enabled: true
+    
+  - name: MIT Technology Review
+    url: https://www.technologyreview.com/feed/
+    enabled: true
+    
+  - name: Hacker News Front Page
+    url: https://hnrss.org/frontpage
+    enabled: true
+    
+  - name: arXiv AI/ML
+    url: https://rss.arxiv.org/rss/cs.AI+cs.LG
+    enabled: true
+    
+  # === 第二級：電子報 ===
+  - name: The Batch (Andrew Ng)
+    url: https://read.deeplearning.ai/feed
+    enabled: true
+    
+  - name: Import AI
+    url: https://importai.substack.com/feed
+    enabled: true
+
+  # === 可選來源（預設關閉）===
+  - name: Google AI Blog
+    url: https://ai.googleblog.com/feeds/posts/default
+    enabled: false
+    
+  - name: OpenAI Blog
+    url: https://openai.com/blog/rss/
+    enabled: false
+
+# 過濾設定
+filters:
+  # 必須包含至少一個關鍵字（不區分大小寫）
+  required_keywords:
+    - AI
+    - artificial intelligence
+    - machine learning
+    - deep learning
+    - LLM
+    - GPT
+    - Claude
+    - neural network
+    - transformer
+    - generative
+    - OpenAI
+    - Anthropic
+    - Google AI
+    - Meta AI
+    
+  # 排除包含這些關鍵字的文章
+  blocked_keywords:
+    - sponsored
+    - advertisement
+    - newsletter signup
+    - subscribe now
+    - promotion
+
+# 摘要設定
+digest:
+  # 最終推送的文章數量上限
+  max_articles: 10
+  
+  # 最低分數門檻（1-10）
+  min_score: 6
+  
+  # 每個 feed 最多抓取的文章數
+  articles_per_feed: 15
+  
+  # 總共處理的文章數上限（控制 API 成本）
+  max_articles_to_process: 50
+
+# LLM 設定
+llm:
+  # 模型選擇（建議使用 gpt-4o-mini，性價比最高）
+  model: gpt-4o-mini
+  
+  # 摘要最大 token 數
+  max_tokens: 300
+  
+  # 溫度（越低越穩定）
+  temperature: 0.3
+  
+  # 請求超時（秒）
+  timeout: 30
+
+# Slack 設定
+slack:
+  # 訊息標題
+  title: "📰 AI 新聞摘要"
+  
+  # 是否顯示來源
+  show_source: true
+  
+  # 是否顯示評分
+  show_score: true
+  
+  # 是否顯示分類
+  show_category: true
+
+# 日誌設定
+logging:
+  level: INFO
+  format: "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {message}"
