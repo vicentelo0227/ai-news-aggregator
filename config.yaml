@@ -75,10 +75,10 @@ filters:
 # 摘要設定
 digest:
   # 最終推送的文章數量上限
-  max_articles: 10
+  max_articles: 20
   
   # 最低分數門檻（1-10）
-  min_score: 6
+  min_score: 5
   
   # 每個 feed 最多抓取的文章數
   articles_per_feed: 15
@@ -89,16 +89,16 @@ digest:
 # LLM 設定
 llm:
   # 模型選擇（建議使用 gpt-4o-mini，性價比最高）
-  model: gpt-4o-mini
+  model: gpt-5.2-2025-12-11
   
   # 摘要最大 token 數
-  max_tokens: 300
+  max_tokens: 5000
   
   # 溫度（越低越穩定）
   temperature: 0.3
   
   # 請求超時（秒）
-  timeout: 30
+  timeout: 60
 
 # Slack 設定
 slack:
