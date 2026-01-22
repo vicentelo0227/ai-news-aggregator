@@ -71,7 +71,7 @@ def process_single_article(client: openai.OpenAI, article: dict) -> dict | None:
                 {"role": "user", "content": user_content}
             ],
             response_format={"type": "json_object"},
-            max_tokens=llm_config.get("max_tokens", 300),
+            max_completion_tokens=llm_config.get("max_completion_tokens", 300),
             temperature=llm_config.get("temperature", 0.3)
         )
         
