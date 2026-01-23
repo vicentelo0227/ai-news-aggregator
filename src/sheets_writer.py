@@ -146,10 +146,6 @@ def write_articles_to_sheet(
         # 寫入標題列
         worksheet.append_row(headers)
         
-        # 凍結第一行（表頭）
-        worksheet.freeze(rows=1)
-        logger.info("已凍結第一行（表頭）")
-        
         # 準備資料列
         time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
         type_display = NEWS_TYPE_NAMES.get(news_type, news_type)
@@ -177,17 +173,81 @@ def write_articles_to_sheet(
             worksheet.append_rows(rows, value_input_option='USER_ENTERED')
             logger.info(f"✓ 成功寫入 {len(rows)} 篇文章到工作表 '{worksheet_name}'")
         
-        # 調整欄寬（可選，讓內容更易讀）
+        # 格式美化
         try:
-            # 設定較寬的欄位給長文字欄位
-            worksheet.set_column_width(worksheet.col_values(1), 150)  # 抓取時間
-            worksheet.set_column_width(worksheet.col_values(3), 300)  # 標題
-            worksheet.set_column_width(worksheet.col_values(8), 500)  # AI 摘要
-            worksheet.set_column_width(worksheet.col_values(9), 400)  # 關聯企業
-            worksheet.set_column_width(worksheet.col_values(10), 400)  # 市場影響
-            worksheet.set_column_width(worksheet.col_values(11), 400)  # 投資觀點
-        except Exception:
-            pass  # 欄寬設定失敗不影響主要功能
+            total_rows = len(rows) + 1  # 包含標題列
+            
+            # 1. 設定所有儲存格：文字靠上對齊 + 自動換行
+            worksheet.format(
+                f"A1:L{total_rows}",
+                {
+                    "verticalAlignment": "TOP",  # 垂直靠上
+                    "wrapStrategy": "WRAP"  # 自動換行
+                }
+            )
+            logger.info("✓ 已設定文字靠上對齊與自動換行")
+            
+            # 2. 設定標題列格式：粗體 + 置中 + 背景色
+            worksheet.format(
+                "A1:L1",
+                {
+                    "textFormat": {"bold": True},
+                    "horizontalAlignment": "CENTER",
+                    "verticalAlignment": "MIDDLE",
+                    "backgroundColor": {"red": 0.9, "green": 0.9, "blue": 0.9}
+                }
+            )
+            logger.info("✓ 已設定標題列格式")
+            
+            # 3. 設定欄寬（適合內容長度）
+            # 使用 gspread 的 batch_update 來設定欄寬
+            spreadsheet_id = spreadsheet.id
+            sheet_id = worksheet.id
+            
+            # 欄寬設定（像素）
+            column_widths = [
+                (0, 150),   # A: 抓取時間
+                (1, 80),    # B: 類型
+                (2, 300),   # C: 標題
+                (3, 200),   # D: URL
+                (4, 100),   # E: 來源
+                (5, 50),    # F: 評分
+                (6, 80),    # G: 分類
+                (7, 400),   # H: AI 摘要
+                (8, 300),   # I: 關聯企業
+                (9, 300),   # J: 市場影響
+                (10, 300),  # K: 投資觀點
+                (11, 150),  # L: 發布時間
+            ]
+            
+            requests = []
+            for col_index, width in column_widths:
+                requests.append({
+                    "updateDimensionProperties": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "dimension": "COLUMNS",
+                            "startIndex": col_index,
+                            "endIndex": col_index + 1
+                        },
+                        "properties": {"pixelSize": width},
+                        "fields": "pixelSize"
+                    }
+                })
+            
+            # 執行批次更新欄寬
+            spreadsheet.batch_update({"requests": requests})
+            logger.info("✓ 已設定欄寬")
+            
+        except Exception as e:
+            logger.warning(f"格式設定部分失敗（不影響資料）：{e}")
+        
+        # 4. 凍結第一行（表頭）與前三欄（A, B, C）
+        try:
+            worksheet.freeze(rows=1, cols=3)
+            logger.info("✓ 已凍結第一行與前三欄（A, B, C）")
+        except Exception as e:
+            logger.warning(f"凍結設定失敗：{e}")
         
         return True
         
