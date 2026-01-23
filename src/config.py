@@ -1,6 +1,6 @@
 """
 設定載入模組
-負責從 .env 和 config.yaml 載入所有設定
+負責從 .env 和 config.yaml 載入所有設定，支援多新聞類型
 """
 import os
 from pathlib import Path
@@ -22,12 +22,13 @@ class Config:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     
-    def __init__(self, config_path: str | None = None):
+    def __init__(self, config_path: str | None = None, news_type: str | None = None):
         """
         初始化設定
         
         Args:
             config_path: config.yaml 的路徑，預設為專案根目錄
+            news_type: 新聞類型（ai/tw_stock/us_stock），預設從設定檔讀取
         """
         if config_path is None:
             # 預設路徑：專案根目錄的 config.yaml
@@ -35,8 +36,15 @@ class Config:
         
         self._config_path = Path(config_path)
         self._yaml_config: dict[str, Any] = {}
+        self._news_type: str = news_type or "ai"
         
         self._load_yaml_config()
+        
+        # 設定預設新聞類型
+        if news_type is None:
+            global_config = self._yaml_config.get("global", {})
+            self._news_type = global_config.get("default_news_type", "ai")
+        
         self._validate_config()
         self._setup_logging()
     
@@ -80,28 +88,71 @@ class Config:
         )
     
     @property
+    def news_type(self) -> str:
+        """取得當前新聞類型"""
+        return self._news_type
+    
+    @news_type.setter
+    def news_type(self, value: str) -> None:
+        """設定新聞類型"""
+        available_types = self.available_news_types
+        if value not in available_types:
+            logger.warning(f"無效的新聞類型：{value}，使用預設值 'ai'")
+            value = "ai"
+        self._news_type = value
+    
+    @property
+    def available_news_types(self) -> list[str]:
+        """取得所有可用的新聞類型"""
+        news_types = self._yaml_config.get("news_types", {})
+        return list(news_types.keys())
+    
+    def get_news_type_config(self, news_type: str | None = None) -> dict[str, Any]:
+        """取得指定新聞類型的完整設定"""
+        if news_type is None:
+            news_type = self._news_type
+        
+        news_types = self._yaml_config.get("news_types", {})
+        return news_types.get(news_type, {})
+    
+    @property
+    def news_type_name(self) -> str:
+        """取得當前新聞類型的顯示名稱"""
+        type_config = self.get_news_type_config()
+        return type_config.get("name", self._news_type)
+    
+    @property
+    def slack_title(self) -> str:
+        """取得當前新聞類型的 Slack 標題"""
+        type_config = self.get_news_type_config()
+        return type_config.get("slack_title", f"📰 {self.news_type_name}")
+    
+    @property
     def feeds(self) -> list[dict[str, Any]]:
-        """取得啟用的 RSS feed 列表"""
-        all_feeds = self._yaml_config.get("feeds", [])
+        """取得當前新聞類型啟用的 RSS feed 列表"""
+        type_config = self.get_news_type_config()
+        all_feeds = type_config.get("feeds", [])
         # 只回傳 enabled: true 的 feeds
         return [f for f in all_feeds if f.get("enabled", True)]
     
     @property
     def filters(self) -> dict[str, Any]:
-        """取得過濾設定"""
-        return self._yaml_config.get("filters", {
-            "required_keywords": ["AI", "machine learning", "LLM"],
-            "blocked_keywords": ["sponsored", "advertisement"]
-        })
+        """取得當前新聞類型的過濾設定"""
+        type_config = self.get_news_type_config()
+        keywords = type_config.get("keywords", {})
+        return {
+            "required_keywords": keywords.get("required", []),
+            "blocked_keywords": keywords.get("blocked", [])
+        }
     
     @property
     def digest(self) -> dict[str, Any]:
         """取得摘要設定"""
         return self._yaml_config.get("digest", {
-            "max_articles": 10,
-            "min_score": 6,
+            "max_articles": 20,
+            "min_score": 5,
             "articles_per_feed": 15,
-            "max_articles_to_process": 50
+            "process_all_filtered": True
         })
     
     @property
@@ -109,16 +160,15 @@ class Config:
         """取得 LLM 設定"""
         return self._yaml_config.get("llm", {
             "model": "gpt-4o-mini",
-            "max_tokens": 300,
+            "max_completion_tokens": 2000,
             "temperature": 0.3,
-            "timeout": 30
+            "timeout": 60
         })
     
     @property
     def slack(self) -> dict[str, Any]:
         """取得 Slack 設定"""
         return self._yaml_config.get("slack", {
-            "title": "📰 AI 新聞摘要",
             "show_source": True,
             "show_score": True,
             "show_category": True
@@ -137,9 +187,25 @@ class Config:
 _config: Config | None = None
 
 
-def get_config() -> Config:
-    """取得設定實例（單例模式）"""
+def get_config(news_type: str | None = None) -> Config:
+    """
+    取得設定實例
+    
+    Args:
+        news_type: 新聞類型，如果提供則會更新設定
+        
+    Returns:
+        Config 實例
+    """
     global _config
     if _config is None:
-        _config = Config()
+        _config = Config(news_type=news_type)
+    elif news_type is not None:
+        _config.news_type = news_type
     return _config
+
+
+def reset_config() -> None:
+    """重置設定實例（用於測試或重新載入）"""
+    global _config
+    _config = None

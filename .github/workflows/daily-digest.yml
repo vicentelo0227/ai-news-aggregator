@@ -1,19 +1,32 @@
 # GitHub Actions 工作流程
-# 每天自動執行 AI 新聞聚合並推送到 Slack
+# 多類型新聞聚合器 - 支援 AI、台股、美股新聞的自動排程
 
-name: Daily AI News Digest
+name: Multi-Type News Digest
 
 on:
   # 排程執行（UTC 時間）
   schedule:
-    # 每天 UTC 00:00（台灣時間 08:00）
+    # AI 新聞：每天 UTC 00:00（台灣時間 08:00）
     - cron: '0 0 * * *'
-    # 每天 UTC 06:00（台灣時間 14:00）
-    - cron: '0 6 * * *'
+    
+    # 台股新聞：週一至週五 UTC 10:00（台灣時間 18:00）
+    - cron: '0 10 * * 1-5'
+    
+    # 美股新聞：週一至週五 UTC 14:00（台灣時間 22:00）
+    - cron: '0 14 * * 1-5'
   
   # 允許手動觸發
   workflow_dispatch:
     inputs:
+      news_type:
+        description: '新聞類型'
+        required: true
+        default: 'ai'
+        type: choice
+        options:
+          - ai
+          - tw_stock
+          - us_stock
       debug:
         description: '啟用除錯模式'
         required: false
@@ -25,53 +38,137 @@ permissions:
   contents: read
 
 jobs:
-  digest:
-    name: Generate and Send Digest
+  # AI 新聞 Job
+  ai-news:
+    name: AI News Digest
     runs-on: ubuntu-latest
-    
-    # 設定超時時間（分鐘）
-    timeout-minutes: 15
+    timeout-minutes: 30
+    # 只在排程的 00:00 UTC 或手動選擇 ai 時執行
+    if: github.event.schedule == '0 0 * * *' || (github.event_name == 'workflow_dispatch' && github.event.inputs.news_type == 'ai')
     
     steps:
-      # 1. 檢出程式碼
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      # 2. 設定 Python 環境
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
       
-      # 3. 安裝相依套件
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      # 4. 設定 Google Credentials
       - name: Setup Google Credentials
         env:
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: |
           echo "$GOOGLE_CREDENTIALS" > credentials.json
       
-      # 5. 執行主程式
-      - name: Run news aggregator
+      - name: Run AI news aggregator
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LOG_LEVEL: ${{ github.event.inputs.debug == 'true' && 'DEBUG' || 'INFO' }}
         run: |
-          python -m src.main
+          python -m src.main --news-type ai
       
-      # 6. 上傳日誌（可選，用於除錯）
-      - name: Upload logs
+      - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: error-logs
-          path: |
-            *.log
+          name: ai-news-error-logs
+          path: "*.log"
+          retention-days: 7
+
+  # 台股新聞 Job
+  tw-stock-news:
+    name: Taiwan Stock News Digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 只在排程的 10:00 UTC（週一至週五）或手動選擇 tw_stock 時執行
+    if: github.event.schedule == '0 10 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.news_type == 'tw_stock')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Setup Google Credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" > credentials.json
+      
+      - name: Run Taiwan stock news aggregator
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LOG_LEVEL: ${{ github.event.inputs.debug == 'true' && 'DEBUG' || 'INFO' }}
+        run: |
+          python -m src.main --news-type tw_stock
+      
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tw-stock-error-logs
+          path: "*.log"
+          retention-days: 7
+
+  # 美股新聞 Job
+  us-stock-news:
+    name: US Stock News Digest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # 只在排程的 14:00 UTC（週一至週五）或手動選擇 us_stock 時執行
+    if: github.event.schedule == '0 14 * * 1-5' || (github.event_name == 'workflow_dispatch' && github.event.inputs.news_type == 'us_stock')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Setup Google Credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" > credentials.json
+      
+      - name: Run US stock news aggregator
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LOG_LEVEL: ${{ github.event.inputs.debug == 'true' && 'DEBUG' || 'INFO' }}
+        run: |
+          python -m src.main --news-type us_stock
+      
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: us-stock-error-logs
+          path: "*.log"
           retention-days: 7

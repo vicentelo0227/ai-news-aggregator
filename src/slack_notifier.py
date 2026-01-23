@@ -12,7 +12,7 @@ from loguru import logger
 from .config import get_config
 
 
-def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches: int = 1, total_articles: int = 0) -> list[dict[str, Any]]:
+def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches: int = 1, total_articles: int = 0, title: str | None = None) -> list[dict[str, Any]]:
     """
     將文章列表格式化為 Slack Block Kit 格式
     
@@ -21,6 +21,7 @@ def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches:
         batch_num: 當前批次編號（從 0 開始）
         total_batches: 總批次數
         total_articles: 總文章數
+        title: 自訂標題（可選）
         
     Returns:
         Slack blocks 列表
@@ -32,7 +33,7 @@ def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches:
     offset = batch_num * 15  # 每批最多 15 篇
     
     # 標題區塊
-    title_text = slack_config.get("title", "📰 AI 新聞摘要")
+    title_text = title or slack_config.get("title", "📰 AI 新聞摘要")
     if total_batches > 1:
         title_text += f" ({batch_num + 1}/{total_batches})"
     
@@ -90,6 +91,8 @@ def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches:
                 "RESEARCH": "🔬",
                 "PRODUCT": "🚀",
                 "INDUSTRY": "🏢",
+                "MARKET": "📊",
+                "POLICY": "📜",
                 "OPINION": "💭",
                 "TUTORIAL": "📚"
             }.get(category, "📄")
@@ -130,13 +133,14 @@ def format_slack_blocks(articles: list[dict], batch_num: int = 0, total_batches:
     return blocks
 
 
-def send_to_slack(articles: list[dict], max_retries: int = 3) -> bool:
+def send_to_slack(articles: list[dict], max_retries: int = 3, title: str | None = None) -> bool:
     """
     發送訊息到 Slack（自動分批處理超過 15 篇的文章）
     
     Args:
         articles: 處理完成的文章列表
         max_retries: 最大重試次數
+        title: 自訂標題（可選）
         
     Returns:
         True 如果發送成功，False 如果失敗
@@ -162,7 +166,7 @@ def send_to_slack(articles: list[dict], max_retries: int = 3) -> bool:
     
     for batch_num, batch in enumerate(batches):
         # 建立訊息
-        blocks = format_slack_blocks(batch, batch_num, total_batches, total_articles)
+        blocks = format_slack_blocks(batch, batch_num, total_batches, total_articles, title=title)
         payload = {
             "text": f"AI 新聞摘要 - {total_articles} 則報導" + (f" ({batch_num + 1}/{total_batches})" if total_batches > 1 else ""),
             "blocks": blocks
