@@ -15,9 +15,12 @@ from loguru import logger
 # #region agent log
 DEBUG_LOG_PATH = "/Users/luoyuxiang/new_catch/.cursor/debug.log"
 def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
+    # Log to both file (local) and logger (GitHub Actions)
+    log_entry = json.dumps({"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data}, ensure_ascii=False)
+    logger.debug(f"[DEBUG] {log_entry}")
     try:
         with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data, "timestamp": datetime.now().isoformat()}, ensure_ascii=False) + "\n")
+            f.write(log_entry + "\n")
     except: pass
 # #endregion
 
@@ -35,14 +38,22 @@ def clean_text_for_sheets(text: str) -> str:
     if not text:
         return ""
     
-    # 移除控制字符 (0x00-0x1F)，但保留 \t \n \r
+    # 移除所有控制字符 (0x00-0x1F)，但保留 \t(0x09) \n(0x0a) \r(0x0d)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    
+    # 移除 DEL 字符和其他特殊控制字符
+    text = re.sub(r'[\x7f]', '', text)
     
     # 移除特殊 Unicode 字符
     text = text.replace('\u200b', '')  # 零寬空格
     text = text.replace('\ufeff', '')  # BOM
     text = text.replace('\u200c', '')  # 零寬非連接符
     text = text.replace('\u200d', '')  # 零寬連接符
+    text = text.replace('\u2028', '\n')  # 行分隔符 -> 換行
+    text = text.replace('\u2029', '\n')  # 段落分隔符 -> 換行
+    
+    # 移除其他可能導致 JSON 問題的字符
+    text = re.sub(r'[\x80-\x9f]', '', text)  # C1 控制字符
     
     return text
 
@@ -111,14 +122,26 @@ def write_articles_to_sheet(
         return False
     
     try:
+        # #region agent log
+        _debug_log("E", "sheets_writer.py:start", "Starting write_articles_to_sheet", {"article_count": len(articles), "news_type": news_type})
+        # #endregion
+        
         # 連接 Google Sheet
         client = get_gspread_client()
         spreadsheet = client.open_by_key(sheet_id)
+        
+        # #region agent log
+        _debug_log("E", "sheets_writer.py:connected", "Connected to spreadsheet", {"sheet_id": sheet_id})
+        # #endregion
         
         # 使用查詢時間與類型作為工作表名稱
         current_time = datetime.now()
         type_name = NEWS_TYPE_NAMES.get(news_type, news_type)
         worksheet_name = f"{current_time.strftime('%Y/%m/%d %H:%M')} {type_name}"
+        
+        # #region agent log
+        _debug_log("F", "sheets_writer.py:worksheet_name", "Worksheet name created", {"worksheet_name": worksheet_name})
+        # #endregion
         
         # 建立新工作表
         worksheet = spreadsheet.add_worksheet(
@@ -127,6 +150,10 @@ def write_articles_to_sheet(
             cols=12  # 增加欄位數
         )
         logger.info(f"建立新工作表：{worksheet_name}")
+        
+        # #region agent log
+        _debug_log("E", "sheets_writer.py:worksheet_created", "Worksheet created successfully", {})
+        # #endregion
         
         # 準備標題列（新增深度分析欄位）
         headers = [
@@ -147,9 +174,17 @@ def write_articles_to_sheet(
         # 寫入標題列
         worksheet.append_row(headers)
         
+        # #region agent log
+        _debug_log("E", "sheets_writer.py:headers_written", "Headers written successfully", {})
+        # #endregion
+        
         # 凍結第一行（表頭）
         worksheet.freeze(rows=1)
         logger.info("已凍結第一行（表頭）")
+        
+        # #region agent log
+        _debug_log("E", "sheets_writer.py:frozen", "Row frozen successfully", {})
+        # #endregion
         
         # 準備資料列
         time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -162,18 +197,15 @@ def write_articles_to_sheet(
         
         for idx, article in enumerate(articles):
             # #region agent log
-            # Check for control characters in each field
-            fields_to_check = ["title", "ai_summary", "related_companies", "market_impact", "investment_insight"]
+            # Check for control characters in each field BEFORE cleaning
+            fields_to_check = ["title", "ai_summary", "related_companies", "market_impact", "investment_insight", "summary"]
             for field in fields_to_check:
                 val = article.get(field, "")
                 if val:
-                    # Find control characters (0x00-0x1F except \t\n\r)
-                    control_chars = re.findall(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', val)
+                    # Find ALL control characters (0x00-0x1F)
+                    control_chars = re.findall(r'[\x00-\x1f]', val)
                     if control_chars:
-                        _debug_log("A", f"sheets_writer.py:article_{idx}:{field}", "Found control characters", {"field": field, "chars": [hex(ord(c)) for c in control_chars], "title": article.get("title", "")[:50]})
-                    # Check for problematic unicode
-                    if '\u200b' in val or '\ufeff' in val:
-                        _debug_log("C", f"sheets_writer.py:article_{idx}:{field}", "Found special unicode", {"field": field, "has_zwsp": '\u200b' in val, "has_bom": '\ufeff' in val})
+                        _debug_log("A", f"sheets_writer.py:article_{idx}:{field}", "Found control characters BEFORE clean", {"field": field, "chars": [hex(ord(c)) for c in control_chars[:10]], "char_count": len(control_chars), "title": article.get("title", "")[:50]})
             # #endregion
             
             row = [
