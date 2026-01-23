@@ -94,6 +94,30 @@ def get_credentials_path() -> Path:
 def get_gspread_client() -> gspread.Client:
     """建立 gspread 客戶端"""
     credentials_path = get_credentials_path()
+    
+    # #region agent log
+    # Validate credentials file content
+    try:
+        with open(credentials_path, 'r', encoding='utf-8') as f:
+            cred_content = f.read()
+        # Check for control characters in credentials
+        control_chars = re.findall(r'[\x00-\x1f]', cred_content)
+        # Filter out valid JSON whitespace (\t, \n, \r)
+        invalid_chars = [c for c in control_chars if c not in '\t\n\r']
+        if invalid_chars:
+            _debug_log("G", "sheets_writer.py:credentials", "Found invalid control chars in credentials", {"chars": [hex(ord(c)) for c in invalid_chars[:10]], "count": len(invalid_chars)})
+        else:
+            _debug_log("G", "sheets_writer.py:credentials", "Credentials file is clean", {"file_size": len(cred_content)})
+        # Try to parse as JSON to verify
+        json.loads(cred_content)
+        _debug_log("G", "sheets_writer.py:credentials", "Credentials JSON parse OK", {})
+    except json.JSONDecodeError as e:
+        _debug_log("G", "sheets_writer.py:credentials", "Credentials JSON parse FAILED", {"error": str(e)})
+        raise
+    except Exception as e:
+        _debug_log("G", "sheets_writer.py:credentials", "Credentials read error", {"error": str(e)})
+    # #endregion
+    
     credentials = Credentials.from_service_account_file(
         str(credentials_path),
         scopes=SCOPES
