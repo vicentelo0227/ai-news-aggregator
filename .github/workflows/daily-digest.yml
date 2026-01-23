@@ -50,7 +50,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       
-      # 4. 執行主程式
+      # 4. 設定 Google Credentials
+      - name: Setup Google Credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          echo "$GOOGLE_CREDENTIALS" > credentials.json
+      
+      # 5. 執行主程式
       - name: Run news aggregator
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
@@ -59,7 +66,7 @@ jobs:
         run: |
           python -m src.main
       
-      # 5. 上傳日誌（可選，用於除錯）
+      # 6. 上傳日誌（可選，用於除錯）
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v4

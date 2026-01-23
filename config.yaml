@@ -26,10 +26,40 @@ feeds:
   - name: arXiv AI/ML
     url: https://rss.arxiv.org/rss/cs.AI+cs.LG
     enabled: true
+
+  # === 新增：權威科技媒體 ===
+  - name: Wired AI
+    url: https://www.wired.com/feed/tag/ai/latest/rss
+    enabled: true
+    
+  - name: Ars Technica
+    url: https://feeds.arstechnica.com/arstechnica/technology-lab
+    enabled: true
+    
+  - name: IEEE Spectrum AI
+    url: https://spectrum.ieee.org/feeds/topic/artificial-intelligence.rss
+    enabled: true
+
+  # === 新增：AI 公司官方部落格 ===
+  - name: Hugging Face Blog
+    url: https://huggingface.co/blog/feed.xml
+    enabled: true
+    
+  - name: NVIDIA AI Blog
+    url: https://blogs.nvidia.com/feed/
+    enabled: true
+    
+  - name: DeepMind Blog
+    url: https://deepmind.google/blog/rss.xml
+    enabled: true
+    
+  - name: Microsoft AI Blog
+    url: https://blogs.microsoft.com/ai/feed/
+    enabled: true
     
   # === 第二級：電子報 ===
   - name: The Batch (Andrew Ng)
-    url: https://read.deeplearning.ai/feed
+    url: https://thebatch.substack.com/feed
     enabled: true
     
   - name: Import AI

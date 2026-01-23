@@ -4,6 +4,10 @@
 venv/
 env/
 
+# Google Service Account Credentials
+credentials.json
+*.json
+
 # Python
 __pycache__/
 *.py[cod]

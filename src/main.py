@@ -14,6 +14,7 @@ from .feeds import fetch_all_feeds
 from .filters import filter_articles
 from .processor import process_articles
 from .slack_notifier import send_to_slack, send_error_notification
+from .sheets_writer import write_articles_to_sheet
 
 
 def main() -> int:
@@ -66,13 +67,32 @@ def main() -> int:
             logger.error("Slack 發送失敗")
             return 1
         
+        # Step 5: 寫入 Google Sheet（所有過濾後的文章）
+        logger.info("\n📊 Step 5: 寫入 Google Sheet")
+        
+        # 合併已處理和未處理的文章
+        processed_urls = {a.get("url") for a in processed_articles}
+        all_articles_for_sheet = list(processed_articles)  # 先加入已處理的
+        
+        # 加入未被 LLM 處理的過濾後文章
+        for article in filtered_articles:
+            if article.get("url") not in processed_urls:
+                all_articles_for_sheet.append(article)
+        
+        sheet_success = write_articles_to_sheet(all_articles_for_sheet)
+        
+        if sheet_success:
+            logger.info(f"✓ 已寫入 {len(all_articles_for_sheet)} 篇文章到 Google Sheet")
+        else:
+            logger.warning("⚠️ Google Sheet 寫入失敗，但 Slack 推送已完成")
+        
         # 完成
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
         
         logger.info("\n" + "=" * 50)
         logger.info("✅ 執行完成！")
-        logger.info(f"📊 統計：抓取 {len(articles)} → 過濾後 {len(filtered_articles)} → 最終 {len(processed_articles)} 篇")
+        logger.info(f"📊 統計：抓取 {len(articles)} → 過濾後 {len(filtered_articles)} → Slack {len(processed_articles)} 篇 → Sheet {len(all_articles_for_sheet)} 篇")
         logger.info(f"⏱️ 耗時：{duration:.1f} 秒")
         logger.info("=" * 50)
         
