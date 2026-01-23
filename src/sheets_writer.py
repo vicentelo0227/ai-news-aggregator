@@ -2,6 +2,8 @@
 Google Sheets 寫入模組
 負責將文章資料寫入 Google Sheet（含深度分析欄位）
 """
+import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -9,6 +11,40 @@ from typing import Any
 import gspread
 from google.oauth2.service_account import Credentials
 from loguru import logger
+
+# #region agent log
+DEBUG_LOG_PATH = "/Users/luoyuxiang/new_catch/.cursor/debug.log"
+def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
+    try:
+        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data, "timestamp": datetime.now().isoformat()}, ensure_ascii=False) + "\n")
+    except: pass
+# #endregion
+
+
+def clean_text_for_sheets(text: str) -> str:
+    """
+    清理文字中的控制字符和特殊 Unicode，確保可以寫入 Google Sheets
+    
+    Args:
+        text: 原始文字
+        
+    Returns:
+        清理後的文字
+    """
+    if not text:
+        return ""
+    
+    # 移除控制字符 (0x00-0x1F)，但保留 \t \n \r
+    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', text)
+    
+    # 移除特殊 Unicode 字符
+    text = text.replace('\u200b', '')  # 零寬空格
+    text = text.replace('\ufeff', '')  # BOM
+    text = text.replace('\u200c', '')  # 零寬非連接符
+    text = text.replace('\u200d', '')  # 零寬連接符
+    
+    return text
 
 # Google Sheets API 範圍
 SCOPES = [
@@ -120,27 +156,59 @@ def write_articles_to_sheet(
         type_display = NEWS_TYPE_NAMES.get(news_type, news_type)
         rows = []
         
-        for article in articles:
+        # #region agent log
+        _debug_log("A", "sheets_writer.py:prepare_rows", "Starting to prepare rows", {"article_count": len(articles)})
+        # #endregion
+        
+        for idx, article in enumerate(articles):
+            # #region agent log
+            # Check for control characters in each field
+            fields_to_check = ["title", "ai_summary", "related_companies", "market_impact", "investment_insight"]
+            for field in fields_to_check:
+                val = article.get(field, "")
+                if val:
+                    # Find control characters (0x00-0x1F except \t\n\r)
+                    control_chars = re.findall(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', val)
+                    if control_chars:
+                        _debug_log("A", f"sheets_writer.py:article_{idx}:{field}", "Found control characters", {"field": field, "chars": [hex(ord(c)) for c in control_chars], "title": article.get("title", "")[:50]})
+                    # Check for problematic unicode
+                    if '\u200b' in val or '\ufeff' in val:
+                        _debug_log("C", f"sheets_writer.py:article_{idx}:{field}", "Found special unicode", {"field": field, "has_zwsp": '\u200b' in val, "has_bom": '\ufeff' in val})
+            # #endregion
+            
             row = [
                 time_str,
                 type_display,
-                article.get("title", ""),
+                clean_text_for_sheets(article.get("title", "")),
                 article.get("url", ""),
-                article.get("source", ""),
+                clean_text_for_sheets(article.get("source", "")),
                 str(article.get("score", "")),
                 article.get("category", ""),
-                article.get("ai_summary", ""),  # 不截斷，完整保留
-                article.get("related_companies", ""),  # 關聯企業分析
-                article.get("market_impact", ""),  # 市場影響
-                article.get("investment_insight", ""),  # 投資觀點
+                clean_text_for_sheets(article.get("ai_summary", "")),  # 不截斷，完整保留
+                clean_text_for_sheets(article.get("related_companies", "")),  # 關聯企業分析
+                clean_text_for_sheets(article.get("market_impact", "")),  # 市場影響
+                clean_text_for_sheets(article.get("investment_insight", "")),  # 投資觀點
                 article.get("published", "")
             ]
             rows.append(row)
         
+        # #region agent log
+        _debug_log("B", "sheets_writer.py:before_append", "About to call append_rows", {"row_count": len(rows), "first_row_lengths": [len(str(c)) for c in rows[0]] if rows else []})
+        # #endregion
+        
         # 批次寫入（更有效率）
         if rows:
-            worksheet.append_rows(rows, value_input_option='USER_ENTERED')
-            logger.info(f"✓ 成功寫入 {len(rows)} 篇文章到工作表 '{worksheet_name}'")
+            try:
+                worksheet.append_rows(rows, value_input_option='USER_ENTERED')
+                logger.info(f"✓ 成功寫入 {len(rows)} 篇文章到工作表 '{worksheet_name}'")
+                # #region agent log
+                _debug_log("B", "sheets_writer.py:after_append", "append_rows succeeded", {"row_count": len(rows)})
+                # #endregion
+            except Exception as append_err:
+                # #region agent log
+                _debug_log("B", "sheets_writer.py:append_error", "append_rows failed", {"error": str(append_err), "error_type": type(append_err).__name__})
+                # #endregion
+                raise
         
         # 調整欄寬（可選，讓內容更易讀）
         try:
