@@ -12,18 +12,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from loguru import logger
 
-# #region agent log
-DEBUG_LOG_PATH = "/Users/luoyuxiang/new_catch/.cursor/debug.log"
-def _debug_log(hypothesis_id: str, location: str, message: str, data: dict):
-    # Log to both file (local) and logger (GitHub Actions)
-    log_entry = json.dumps({"hypothesisId": hypothesis_id, "location": location, "message": message, "data": data}, ensure_ascii=False)
-    logger.debug(f"[DEBUG] {log_entry}")
-    try:
-        with open(DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(log_entry + "\n")
-    except: pass
-# #endregion
-
 
 def clean_text_for_sheets(text: str) -> str:
     """
@@ -94,30 +82,6 @@ def get_credentials_path() -> Path:
 def get_gspread_client() -> gspread.Client:
     """建立 gspread 客戶端"""
     credentials_path = get_credentials_path()
-    
-    # #region agent log
-    # Validate credentials file content
-    try:
-        with open(credentials_path, 'r', encoding='utf-8') as f:
-            cred_content = f.read()
-        # Check for control characters in credentials
-        control_chars = re.findall(r'[\x00-\x1f]', cred_content)
-        # Filter out valid JSON whitespace (\t, \n, \r)
-        invalid_chars = [c for c in control_chars if c not in '\t\n\r']
-        if invalid_chars:
-            _debug_log("G", "sheets_writer.py:credentials", "Found invalid control chars in credentials", {"chars": [hex(ord(c)) for c in invalid_chars[:10]], "count": len(invalid_chars)})
-        else:
-            _debug_log("G", "sheets_writer.py:credentials", "Credentials file is clean", {"file_size": len(cred_content)})
-        # Try to parse as JSON to verify
-        json.loads(cred_content)
-        _debug_log("G", "sheets_writer.py:credentials", "Credentials JSON parse OK", {})
-    except json.JSONDecodeError as e:
-        _debug_log("G", "sheets_writer.py:credentials", "Credentials JSON parse FAILED", {"error": str(e)})
-        raise
-    except Exception as e:
-        _debug_log("G", "sheets_writer.py:credentials", "Credentials read error", {"error": str(e)})
-    # #endregion
-    
     credentials = Credentials.from_service_account_file(
         str(credentials_path),
         scopes=SCOPES
@@ -146,26 +110,14 @@ def write_articles_to_sheet(
         return False
     
     try:
-        # #region agent log
-        _debug_log("E", "sheets_writer.py:start", "Starting write_articles_to_sheet", {"article_count": len(articles), "news_type": news_type})
-        # #endregion
-        
         # 連接 Google Sheet
         client = get_gspread_client()
         spreadsheet = client.open_by_key(sheet_id)
-        
-        # #region agent log
-        _debug_log("E", "sheets_writer.py:connected", "Connected to spreadsheet", {"sheet_id": sheet_id})
-        # #endregion
         
         # 使用查詢時間與類型作為工作表名稱
         current_time = datetime.now()
         type_name = NEWS_TYPE_NAMES.get(news_type, news_type)
         worksheet_name = f"{current_time.strftime('%Y/%m/%d %H:%M')} {type_name}"
-        
-        # #region agent log
-        _debug_log("F", "sheets_writer.py:worksheet_name", "Worksheet name created", {"worksheet_name": worksheet_name})
-        # #endregion
         
         # 建立新工作表
         worksheet = spreadsheet.add_worksheet(
@@ -174,10 +126,6 @@ def write_articles_to_sheet(
             cols=12  # 增加欄位數
         )
         logger.info(f"建立新工作表：{worksheet_name}")
-        
-        # #region agent log
-        _debug_log("E", "sheets_writer.py:worksheet_created", "Worksheet created successfully", {})
-        # #endregion
         
         # 準備標題列（新增深度分析欄位）
         headers = [
@@ -198,40 +146,16 @@ def write_articles_to_sheet(
         # 寫入標題列
         worksheet.append_row(headers)
         
-        # #region agent log
-        _debug_log("E", "sheets_writer.py:headers_written", "Headers written successfully", {})
-        # #endregion
-        
         # 凍結第一行（表頭）
         worksheet.freeze(rows=1)
         logger.info("已凍結第一行（表頭）")
-        
-        # #region agent log
-        _debug_log("E", "sheets_writer.py:frozen", "Row frozen successfully", {})
-        # #endregion
         
         # 準備資料列
         time_str = current_time.strftime("%Y-%m-%d %H:%M:%S")
         type_display = NEWS_TYPE_NAMES.get(news_type, news_type)
         rows = []
         
-        # #region agent log
-        _debug_log("A", "sheets_writer.py:prepare_rows", "Starting to prepare rows", {"article_count": len(articles)})
-        # #endregion
-        
-        for idx, article in enumerate(articles):
-            # #region agent log
-            # Check for control characters in each field BEFORE cleaning
-            fields_to_check = ["title", "ai_summary", "related_companies", "market_impact", "investment_insight", "summary"]
-            for field in fields_to_check:
-                val = article.get(field, "")
-                if val:
-                    # Find ALL control characters (0x00-0x1F)
-                    control_chars = re.findall(r'[\x00-\x1f]', val)
-                    if control_chars:
-                        _debug_log("A", f"sheets_writer.py:article_{idx}:{field}", "Found control characters BEFORE clean", {"field": field, "chars": [hex(ord(c)) for c in control_chars[:10]], "char_count": len(control_chars), "title": article.get("title", "")[:50]})
-            # #endregion
-            
+        for article in articles:
             row = [
                 time_str,
                 type_display,
@@ -248,23 +172,10 @@ def write_articles_to_sheet(
             ]
             rows.append(row)
         
-        # #region agent log
-        _debug_log("B", "sheets_writer.py:before_append", "About to call append_rows", {"row_count": len(rows), "first_row_lengths": [len(str(c)) for c in rows[0]] if rows else []})
-        # #endregion
-        
         # 批次寫入（更有效率）
         if rows:
-            try:
-                worksheet.append_rows(rows, value_input_option='USER_ENTERED')
-                logger.info(f"✓ 成功寫入 {len(rows)} 篇文章到工作表 '{worksheet_name}'")
-                # #region agent log
-                _debug_log("B", "sheets_writer.py:after_append", "append_rows succeeded", {"row_count": len(rows)})
-                # #endregion
-            except Exception as append_err:
-                # #region agent log
-                _debug_log("B", "sheets_writer.py:append_error", "append_rows failed", {"error": str(append_err), "error_type": type(append_err).__name__})
-                # #endregion
-                raise
+            worksheet.append_rows(rows, value_input_option='USER_ENTERED')
+            logger.info(f"✓ 成功寫入 {len(rows)} 篇文章到工作表 '{worksheet_name}'")
         
         # 調整欄寬（可選，讓內容更易讀）
         try:
